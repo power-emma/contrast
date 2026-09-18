@@ -1,12 +1,7 @@
-// MC68000 programmer's model: eight 32-bit data registers, eight 32-bit
-// address registers (A7 is banked between USP and SSP depending on S),
-// a 32-bit PC and a 16-bit status register (T . S . . III . . . XNZVC).
-// Only the fields the 68000 actually implements are modeled — no MMU,
-// no 68010+ vector base register, no coprocessor state.
-
+// MC68000 programmer's model: data/address registers, PC and status register
 export const SR_T = 0x8000; // trace
 export const SR_S = 0x2000; // supervisor
-export const SR_I = 0x0700; // interrupt priority mask (bits 10-8)
+export const SR_I = 0x0700; // interrupt priority mask (bits 10..8)
 export const SR_X = 0x0010;
 export const SR_N = 0x0008;
 export const SR_Z = 0x0004;
@@ -20,7 +15,7 @@ export class Registers {
     this.d = new Uint32Array(8);
     this.a = new Uint32Array(8);
     this.pc = 0;
-    this.sr = SR_S | 0x0700; // supervisor, interrupt mask 7 — reset default
+    this.sr = SR_S | 0x0700; // supervisor, interrupt mask 7 at reset
     this.ssp = 0;
     this.usp = 0;
   }
@@ -34,8 +29,7 @@ export class Registers {
     this.usp = 0;
   }
 
-  // -- data registers: size-aware so byte/word writes preserve the
-  // untouched upper bits, matching real MC68000 behavior. --
+  // Size-aware so byte/word writes preserve the untouched upper bits
   getD(n, size = 4) {
     const v = this.d[n];
     if (size === 4) return v >>> 0;
@@ -58,8 +52,7 @@ export class Registers {
     this.d[n] = ((this.d[n] & ~mask) | (value & mask)) >>> 0;
   }
 
-  // -- address registers: always affect the full 32 bits. Callers doing
-  // word-sized loads (MOVEA.W, ADDA.W, ...) must sign-extend beforehand. --
+  // Callers doing word-sized loads must sign-extend beforehand
   getA(n) {
     if (n === 7) return this.a[7] >>> 0;
     return this.a[n] >>> 0;
@@ -69,7 +62,7 @@ export class Registers {
     this.a[n] = value >>> 0;
   }
 
-  // -- status register / CCR --
+  // Status register / CCR
   getSR() {
     return this.sr & 0xffff;
   }
@@ -137,8 +130,7 @@ export class Registers {
     );
   }
 
-  // Register dump matching the layout of the existing CPU_LINES stub in
-  // contrast.jsx, so the live readout can drop straight into that panel.
+  // Register dump matching the panel's layout
   toLines(extra = []) {
     const hex = (v, w) => (v >>> 0).toString(16).padStart(w, '0');
     const d = (i) => `D${i}=${hex(this.getD(i), 8)}`;

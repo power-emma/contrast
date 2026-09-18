@@ -16,12 +16,7 @@ import {
 import { installCmp, installEorCmpm } from './compareGroup.js';
 import { installShiftRegister, installShiftMemory } from './shiftRotate.js';
 
-// Builds the full 65536-entry MC68000 opcode dispatch table. Unfilled
-// slots (reserved/undefined opcodes) stay `null`, which CPU.step()
-// treats as an illegal-instruction exception — line-A ($Axxx) and
-// line-F ($Fxxx) traps are handled directly in cpu.js before this table
-// is even consulted, since they're not "illegal instruction" (vector 4)
-// but their own dedicated vectors.
+// Builds the 65536-entry opcode dispatch table; unfilled slots stay null
 export function buildOpcodeTable() {
   const table = new Array(0x10000).fill(null);
 

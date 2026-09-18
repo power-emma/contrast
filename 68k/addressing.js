@@ -1,10 +1,4 @@
-// Effective-address resolution for the 68000's addressing modes. The
-// 68000 (unlike 68020+) only supports the "brief" indexed extension word
-// format, no scale factors and no full extension words — that's what's
-// implemented here.
-//
-// `cpu` must expose: reg (Registers), bus (Bus), fetchWord(), fetchLong().
-
+// Effective-address resolution for the 68000's addressing modes
 function signExtend(value, size) {
   if (size === 1) return (value << 24) >> 24;
   if (size === 2) return (value << 16) >> 16;
@@ -40,10 +34,7 @@ function makeMemoryHandle(cpu, address, size) {
   };
 }
 
-// mode/reg come from a 6-bit EA field (mode:3 reg:3). Returns a handle
-// with .read()/.write(value)/.address (null for register-direct modes)
-// and .isRegister/.isDataRegister/.isAddrRegister for callers that need
-// to special-case direct-register operands (e.g. ADDA vs ADD).
+// Resolve a 6-bit EA field (mode:3 reg:3) to a read/write handle
 export function resolveEA(cpu, mode, reg, size) {
   const regs = cpu.reg;
 

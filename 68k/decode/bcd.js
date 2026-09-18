@@ -1,9 +1,4 @@
-// ABCD, SBCD, NBCD — packed-BCD byte arithmetic. Per the MC68000 spec,
-// Z is "sticky" (cleared when the result is nonzero, left unchanged
-// when it is zero, so a chain of byte ops can test Z once at the end);
-// N and V are officially undefined by these instructions, so this core
-// leaves them untouched rather than asserting an arbitrary value.
-
+// ABCD, SBCD, NBCD packed-BCD byte arithmetic; Z is sticky, N and V left as-is
 import { resolveEA } from '../addressing.js';
 
 const DATA_REGS = [0, 1, 2, 3, 4, 5, 6, 7];

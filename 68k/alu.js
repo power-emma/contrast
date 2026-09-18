@@ -1,7 +1,4 @@
-// Shared arithmetic/flag helpers used across the instruction groups.
-// All sizes are handled uniformly: values are treated as unsigned
-// `size`-byte quantities and results are wrapped back into that width.
-
+// Shared arithmetic/flag helpers used across the instruction groups
 export const SIZE_MASK = { 1: 0xff, 2: 0xffff, 4: 0xffffffff };
 
 export function wrap(sum, size) {
@@ -19,7 +16,8 @@ export function nz(result, size) {
 // a + b (+x for ADDX). Returns { result, N, Z, V, C, X }.
 export function addFlags(a, b, size, x = 0) {
   const mask = SIZE_MASK[size];
-  const ua = a & mask, ub = b & mask;
+  // Force unsigned so a top-bit-set 32-bit operand doesn't break the carry test
+  const ua = (a & mask) >>> 0, ub = (b & mask) >>> 0;
   const sum = ua + ub + (x & 1);
   const result = wrap(sum, size);
   const carry = sum > mask;
@@ -31,7 +29,8 @@ export function addFlags(a, b, size, x = 0) {
 // a - b (-x for SUBX). Returns { result, N, Z, V, C, X }.
 export function subFlags(a, b, size, x = 0) {
   const mask = SIZE_MASK[size];
-  const ua = a & mask, ub = b & mask;
+  // Force unsigned so a top-bit-set 32-bit operand doesn't break the borrow test
+  const ua = (a & mask) >>> 0, ub = (b & mask) >>> 0;
   const diff = ua - ub - (x & 1);
   const result = wrap(diff, size);
   const borrow = diff < 0;

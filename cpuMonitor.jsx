@@ -4,8 +4,7 @@ import { getRuntime, subscribeRuntime } from './runtime';
 
 const LOADING_LINES = ['MC68000', '-----------------------', 'status: loading mac.rom...'];
 
-// Live register/status readout for the shared 68000 core (see runtime.js,
-// which owns the single Bus/CPU instance stepped once per frame).
+// Live register/status readout for the shared 68000 core
 const CpuMonitor = () => {
   const [lines, setLines] = useState(LOADING_LINES);
 
@@ -15,7 +14,8 @@ const CpuMonitor = () => {
       if (rt.error) {
         setLines(['MC68000', '-----------------------', `status: failed to load mac.rom (${rt.error.message})`]);
       } else if (rt.cpu) {
-        setLines(rt.cpu.statusLines());
+        const mhz = (rt.mhz || 0).toFixed(2);
+        setLines([...rt.cpu.statusLines(), ` clock: ~${mhz} MHz (effective)`]);
       }
     };
     update();

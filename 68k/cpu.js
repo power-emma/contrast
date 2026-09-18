@@ -1,4 +1,4 @@
-import { Registers, SR_S, SR_T } from './registers.js';
+import { Registers, SR_S, SR_T, SR_I } from './registers.js';
 import { BusFault } from './bus.js';
 import { buildOpcodeTable } from './decode/index.js';
 import {
@@ -8,11 +8,10 @@ import {
   VEC_ILLEGAL_INSTRUCTION,
   VEC_LINE_A,
   VEC_LINE_F,
+  VEC_AUTOVECTOR_BASE,
 } from './exceptions.js';
 
-// The opcode table is pure/stateless (handlers close over nothing but
-// their own bit-field constants), so it's built once and shared by every
-// CPU instance.
+// Opcode table is stateless, built once and shared by every CPU instance
 let sharedTable = null;
 function getTable() {
   if (!sharedTable) sharedTable = buildOpcodeTable();
@@ -27,6 +26,8 @@ export class CPU {
     this.halted = false;
     this.haltReason = '';
     this.instructionCount = 0;
+    // Set by STOP: resumes on a high-priority interrupt, unlike halted
+    this.stopped = false;
   }
 
   fetchWord() {
@@ -41,14 +42,13 @@ export class CPU {
     return ((hi << 16) | lo) >>> 0;
   }
 
-  // MC68000 reset exception: read the initial SSP from vector 0 and the
-  // initial PC from vector 1. On this testbed those only exist behind
-  // the bus's ROM overlay (see bus.js) since RAM starts zeroed.
+  // Reset exception: read initial SSP from vector 0 and PC from vector 1
   reset() {
     this.reg.reset();
     this.halted = false;
     this.haltReason = '';
     this.instructionCount = 0;
+    this.stopped = false;
     try {
       const ssp = this.bus.read32(0);
       const pc = this.bus.read32(4);
@@ -61,17 +61,38 @@ export class CPU {
     }
   }
 
+  // Only the VIA's autovector level 1 (VBL) is modeled
+  _maybeInterrupt() {
+    const level = this.bus.pendingInterruptLevel ? this.bus.pendingInterruptLevel() : 0;
+    if (level === 0) return false;
+    const mask = (this.reg.getSR() & SR_I) >>> 8;
+    if (level <= mask) return false;
+    this._takeException(VEC_AUTOVECTOR_BASE + level, this.reg.pc);
+    this.reg.sr = (this.reg.sr & ~SR_I) | (level << 8);
+    return true;
+  }
+
   // Execute a single instruction. Returns false once halted.
   step() {
     if (this.halted) return false;
+    if (this.stopped) {
+      if (this._maybeInterrupt()) this.stopped = false;
+      return true; // idle tick while stopped, whether or not it woke up
+    }
     const startPC = this.reg.pc;
     try {
+      this._maybeInterrupt();
       const opcode = this.fetchWord();
       const topNibble = opcode >>> 12;
-      // Line 1010 / 1111 emulator traps (used by classic Mac OS as the
-      // toolbox dispatch mechanism) are their own vectors, not "illegal
-      // instruction" — they're never in the main dispatch table.
-      if (topNibble === 0xa) throw new CpuTrap(VEC_LINE_A, 'start');
+      // Line 1010/1111 emulator traps are their own vectors, not illegal instruction
+      if (topNibble === 0xa) {
+        // Let the bus service the trap itself; if it does, continue as if it ran
+        if (this.bus.serviceTrap && this.bus.serviceTrap(this, opcode)) {
+          this.instructionCount++;
+          return true;
+        }
+        throw new CpuTrap(VEC_LINE_A, 'start');
+      }
       if (topNibble === 0xf) throw new CpuTrap(VEC_LINE_F, 'start');
 
       const handler = this.table[opcode];
@@ -90,16 +111,14 @@ export class CPU {
         this._takeException(vector, startPC);
         return true;
       }
-      // Anything else is a bug in this emulator, not a modeled CPU
-      // condition — stop cleanly instead of corrupting further state.
+      // Anything else is an emulator bug, stop cleanly instead of corrupting state
       this.halted = true;
       this.haltReason = `internal error: ${err.message}`;
       return false;
     }
   }
 
-  // Run up to `count` instructions, stopping early if halted. Returns
-  // the number actually executed — used to batch work per render frame.
+  // Run up to count instructions, stopping early if halted. Returns count run
   run(count) {
     let n = 0;
     while (n < count && !this.halted) {
@@ -109,12 +128,7 @@ export class CPU {
     return n;
   }
 
-  // Push the standard SR+PC exception frame, enter supervisor mode,
-  // clear trace, and vector to the handler. Note: the real MC68000 also
-  // pushes extra diagnostic words (instruction register, fault address,
-  // access type) for bus/address errors ("group 0" frame); this testbed
-  // uses the same simplified SR+PC frame for every exception type rather
-  // than reproducing that exact 7-word layout.
+  // Push the SR+PC exception frame, enter supervisor mode, clear trace, vector
   _takeException(vector, pc) {
     const regs = this.reg;
     const oldSR = regs.getSR();
@@ -136,8 +150,10 @@ export class CPU {
 
   statusLines() {
     const status = this.halted
-      ? `status: halted — ${this.haltReason}`
-      : `status: running (${this.instructionCount} instr executed)`;
+      ? `status: halted - ${this.haltReason}`
+      : this.stopped
+        ? 'status: stopped (waiting for interrupt)'
+        : `status: running (${this.instructionCount} instr executed)`;
     return this.reg.toLines([status]);
   }
 }

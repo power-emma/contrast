@@ -1,5 +1,6 @@
 import { React, useEffect, useRef } from 'react';
-import { getRuntime, subscribeRuntime, SCREEN_BASE, SCREEN_BYTES } from './runtime';
+import { getRuntime, subscribeVideoFrame, SCREEN_BASE, SCREEN_BYTES } from './runtime';
+import { keyEventBytes } from './68k';
 
 // Classic Macintosh video generator: 512x342, 1 bit per pixel, 64 bytes/row.
 const SCREEN_W = 512;
@@ -26,11 +27,11 @@ function decode1bpp(bytes) {
   return img;
 }
 
-// Reads the framebuffer straight out of the shared 68000 core's RAM
-// (see runtime.js) at the classic compact-Mac screen buffer address and
-// paints it every frame — whatever mac.rom has actually drawn there.
+// Paints the shared core's framebuffer to the canvas every frame
 const VideoScreen = () => {
   const canvasRef = useRef(null);
+  // Whether this screen currently holds the keyboard
+  const focusedRef = useRef(false);
 
   useEffect(() => {
     const ctx = canvasRef.current.getContext('2d');
@@ -41,8 +42,59 @@ const VideoScreen = () => {
       const bytes = bus.ram.subarray(SCREEN_BASE, SCREEN_BASE + SCREEN_BYTES);
       ctx.putImageData(decode1bpp(bytes), 0, 0);
     };
-    return subscribeRuntime(draw);
+    return subscribeVideoFrame(draw);
   }, []);
+
+  // Forward host keys to the Bus as M0110 bytes, gated on our focus flag
+  useEffect(() => {
+    const forward = (code, down) => {
+      if (!focusedRef.current) return false;
+      const bus = getRuntime().bus;
+      if (!bus) return false;
+      const bytes = keyEventBytes(code, down);
+      if (!bytes) return false;
+      bus.keyEvent(bytes);
+      return true;
+    };
+    const onKeyDown = (e) => { if (forward(e.code, true)) e.preventDefault(); };
+    const onKeyUp = (e) => { if (forward(e.code, false)) e.preventDefault(); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  // Map the host pointer straight to Mac screen coordinates
+  const sendMousePos = (e) => {
+    const bus = getRuntime().bus;
+    const canvas = canvasRef.current;
+    if (!bus || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = ((e.clientX - rect.left) / rect.width) * SCREEN_W;
+    const y = ((e.clientY - rect.top) / rect.height) * SCREEN_H;
+    bus.setMouseLoc(x, y);
+  };
+  // Pointer capture keeps events flowing during a drag off the canvas
+  const handlePointerDown = (e) => {
+    e.preventDefault();
+    canvasRef.current.focus();
+    canvasRef.current.setPointerCapture(e.pointerId);
+    sendMousePos(e);
+    const bus = getRuntime().bus;
+    if (bus) bus.setMouseButton(true);
+  };
+  const handlePointerUp = (e) => {
+    canvasRef.current.releasePointerCapture(e.pointerId);
+    sendMousePos(e);
+    const bus = getRuntime().bus;
+    if (bus) bus.setMouseButton(false);
+  };
+  const handlePointerMove = (e) => {
+    sendMousePos(e);
+  };
 
   return (
     <div style={{
@@ -54,7 +106,18 @@ const VideoScreen = () => {
         ref={canvasRef}
         width={SCREEN_W}
         height={SCREEN_H}
-        style={{ width: `${SCREEN_W * 2}px`, height: `${SCREEN_H * 2}px`, maxWidth: '100%', maxHeight: '100%', aspectRatio: `${SCREEN_W} / ${SCREEN_H}`, imageRendering: 'pixelated', border: '1px solid #555' }}
+        tabIndex={0}
+        onFocus={() => { focusedRef.current = true; }}
+        onBlur={() => { focusedRef.current = false; }}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerMove={handlePointerMove}
+        onContextMenu={(e) => e.preventDefault()}
+        style={{
+          width: `${SCREEN_W * 2}px`, height: `${SCREEN_H * 2}px`, maxWidth: '100%', maxHeight: '100%',
+          aspectRatio: `${SCREEN_W} / ${SCREEN_H}`, imageRendering: 'pixelated', border: '1px solid #555',
+          outline: 'none', touchAction: 'none',
+        }}
       />
     </div>
   );

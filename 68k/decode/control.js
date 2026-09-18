@@ -1,7 +1,4 @@
-// Program control (Bcc/BSR/BRA, DBcc, Scc, JMP/JSR/RTS/RTE/RTR, CHK,
-// TRAP/TRAPV, RESET/STOP/NOP/ILLEGAL) and system-register access
-// (MOVE to/from SR, MOVE to CCR, MOVE USP, ANDI/ORI/EORI to CCR/SR).
-
+// Program control (Bcc/BSR/BRA, DBcc, Scc, JMP/JSR/RTS, CHK, TRAP) and SR access
 import { resolveEA, signExtend } from '../addressing.js';
 import {
   CpuTrap,
@@ -154,8 +151,7 @@ export function installMisc(table) {
     requireSupervisor(cpu);
     const sr = cpu.fetchWord();
     cpu.reg.setSR(sr);
-    cpu.halted = true;
-    cpu.haltReason = 'STOP executed (interrupts are not modeled)';
+    cpu.stopped = true; // resumes once a sufficiently-high interrupt arrives
   };
   table[0x4afc] = () => { throw new CpuTrap(VEC_ILLEGAL_INSTRUCTION, 'start'); }; // ILLEGAL
 

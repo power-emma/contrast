@@ -4,9 +4,7 @@ import { getRuntime, subscribeRuntime } from './runtime';
 
 const LOADING_LINES = ['MEMORY CONTROLLER', '-----------------------', 'status: loading mac.rom...'];
 
-// Live readout of the shared Bus's memory-controller state (bus arbitration,
-// wait states, contention stalls, device access counts — see
-// Bus.statusLines() in 68k/bus.js).
+// Live readout of the shared Bus's memory-controller state
 const MemoryController = () => {
   const [lines, setLines] = useState(LOADING_LINES);
 

@@ -9,3 +9,5 @@ export {
   SCREEN_BYTES,
 } from './bus.js';
 export { Registers } from './registers.js';
+export { keyEventBytes } from './keyboard.js';
+export { TRACK_COUNT } from './sony.js';

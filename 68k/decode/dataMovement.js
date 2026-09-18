@@ -1,8 +1,4 @@
-// MOVE/MOVEA, MOVEQ, MOVEM, MOVEP, LEA, PEA, EXG, SWAP, EXT, CLR, LINK, UNLK.
-// Every install* function enumerates the legal opcode bit-field
-// combinations at table-build time and installs a closure bound to
-// those fields, so step() never has to re-decode bits at runtime.
-
+// MOVE/MOVEA, MOVEQ, MOVEM, MOVEP, LEA, PEA, EXG, SWAP, EXT, CLR, LINK, UNLK
 import { resolveEA, signExtend } from '../addressing.js';
 import { logicFlags } from '../alu.js';
 
@@ -14,8 +10,7 @@ function forEachSourceEA(fn) {
   for (let reg = 0; reg <= 4; reg++) fn(7, reg);
 }
 
-// Writable, non-immediate, non-PC-relative destination (includes An
-// direct, since that's exactly what makes MOVE become MOVEA).
+// Writable non-immediate destination, including An direct (makes MOVE into MOVEA)
 function forEachAlterableEA(fn) {
   for (let mode = 0; mode <= 6; mode++) for (const reg of DATA_REGS) fn(mode, reg);
   fn(7, 0);
@@ -23,7 +18,7 @@ function forEachAlterableEA(fn) {
 }
 
 export function installMove(table) {
-  // size field -> {sizeBits for opcode, byte count}
+  // size field maps to opcode sizeBits and byte count
   const SIZES = [
     { bits: 0b01, bytes: 1 },
     { bits: 0b11, bytes: 2 },
@@ -92,10 +87,8 @@ export function installPea(table) {
 
 export function installSwap(table) {
   for (const dn of DATA_REGS) {
-    const opcode = 0x4840 | dn; // note: distinct range from PEA (bit6 differs: 0x4840 is PEA base w/ mode=000; SWAP uses 0x4840..0x4847 only when treated as mode 0 reg dn, which collides with PEA's (An) mode 2 encoding space)
-    // SWAP's real base is 0x4840 with EA-mode bits fixed to 000 (Dn), i.e.
-    // opcode = 0100100001000 rrr = 0x4840 | dn. PEA never installs mode=0
-    // (Dn isn't a control-addressing mode), so there's no collision.
+    const opcode = 0x4840 | dn;
+    // SWAP base 0x4840 with EA-mode fixed to Dn; no collision with PEA
     table[opcode] = (cpu) => {
       const v = cpu.reg.getD(dn, 4);
       const swapped = (((v << 16) | (v >>> 16)) >>> 0);
@@ -107,13 +100,13 @@ export function installSwap(table) {
 
 export function installExt(table) {
   for (const dn of DATA_REGS) {
-    // EXT.W: byte -> word
+    // EXT.W: byte to word
     table[0x4880 | dn] = (cpu) => {
       const v = signExtend(cpu.reg.getD(dn, 1), 1) & 0xffff;
       cpu.reg.setD(dn, v, 2);
       cpu.reg.setFlags(logicFlags(v, 2));
     };
-    // EXT.L: word -> long
+    // EXT.L: word to long
     table[0x48c0 | dn] = (cpu) => {
       const v = signExtend(cpu.reg.getD(dn, 2), 2) >>> 0;
       cpu.reg.setD(dn, v, 4);
@@ -228,8 +221,7 @@ export function installMovem(table) {
   const runStore = (cpu, mode, reg, sizeBytes) => {
     const mask = cpu.fetchWord();
     if (mode === 4) {
-      // predecrement: reversed mask order (bit0=A7..bit7=A0, bit8=D7..bit15=D0),
-      // and the pointer register (if also listed) stores its ORIGINAL value.
+      // Predecrement: reversed mask order, pointer reg stores its original value
       const initialA = [];
       for (let i = 0; i < 8; i++) initialA[i] = cpu.reg.getA(i);
       let addr = cpu.reg.getA(reg);

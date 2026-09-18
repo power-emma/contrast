@@ -1,6 +1,4 @@
-// ADD/ADDA/ADDI/ADDQ/ADDX, SUB/SUBA/SUBI/SUBQ/SUBX, CMPI, NEG/NEGX,
-// MULU/MULS, DIVU/DIVS.
-
+// ADD/ADDA/ADDI/ADDQ/ADDX, SUB variants, CMPI, NEG/NEGX, MULU/MULS, DIVU/DIVS
 import { resolveEA, signExtend } from '../addressing.js';
 import { addFlags, subFlags, logicFlags } from '../alu.js';
 import { CpuTrap, VEC_ZERO_DIVIDE } from '../exceptions.js';
@@ -37,7 +35,7 @@ function fetchImmediate(cpu, size) {
   return cpu.fetchWord() & (size === 1 ? 0xff : 0xffff);
 }
 
-// ADD/SUB register<->ea (base 0xD000/0x9000) plus ADDA/SUBA (opmode 3/7).
+// ADD/SUB register with ea (base 0xD000/0x9000) plus ADDA/SUBA (opmode 3/7)
 function installAddOrSub(table, base, flagsFn, applyOp) {
   for (const dn of DATA_REGS) {
     for (const { bits, bytes: size } of SIZES) {
@@ -138,8 +136,7 @@ export function installImmediateArith(table) {
   });
 }
 
-// ADDX/SUBX: base 0xD100/0x9100, EA-mode field fixed to 0 (Dn/Dn) or 1
-// (-(Ay),-(Ax)); Z is sticky (cleared if nonzero, unchanged if zero).
+// ADDX/SUBX: base 0xD100/0x9100; Z is sticky (cleared if nonzero)
 function installExtend(table, base, flagsFn) {
   for (const dx of DATA_REGS) {
     for (const { bits, bytes: size } of SIZES) {

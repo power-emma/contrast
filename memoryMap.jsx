@@ -2,15 +2,13 @@ import { React, useEffect, useState } from 'react';
 import { getRuntime, subscribeRuntime } from './runtime';
 import { RAM_BLOCK_SIZE, RAM_BLOCK_COUNT } from './68k';
 
-// How many frames a block stays "hot" (white) after a write before fading
-// back down to its region's base colour.
+// How many frames a block stays hot after a write before fading back
 const FADE_FRAMES = 24;
 const RAM_COLS = 16;
 
 const RAM_RGB = [51, 255, 102]; // matches the terminal's green theme
 
-// Everything past RAM, in address order, each with a fixed base colour and
-// (where the region is writable) the deviceWriteFrame key that flashes it.
+// Regions past RAM, each with a base colour and its write flash key
 const DEVICE_REGIONS = [
   { label: 'ROM   $400000-$4FFFFF  (64K, mirrored)', rgb: [64, 170, 255], key: null },
   { label: 'SCC   $800000-$9FFFFF  (read)', rgb: [230, 200, 40], key: null },
@@ -19,9 +17,7 @@ const DEVICE_REGIONS = [
   { label: 'VIA   $E80000-$EFFFFF', rgb: [150, 150, 150], key: 'via' },
 ];
 
-// Blend a region's base colour toward white based on how recently
-// (in frames) it was written — a fresh write is white-hot, fading back to
-// its base colour over FADE_FRAMES.
+// Blend a region's base colour toward white by how recently it was written
 function heatColor(rgb, frame, lastWriteFrame) {
   if (lastWriteFrame == null || lastWriteFrame < 0) return `rgb(${rgb.join(',')})`;
   const t = Math.max(0, 1 - (frame - lastWriteFrame) / FADE_FRAMES);
@@ -93,7 +89,7 @@ const MemoryMap = () => {
 
           <div style={{ marginTop: 6 }}>--------------------------------</div>
           <div>
-            status: live — {RAM_BLOCK_SIZE / 1024}K/block, {' '}
+            status: live - {RAM_BLOCK_SIZE / 1024}K/block, {' '}
             {bus.stats.sccWrites + bus.stats.iwmWrites + bus.stats.viaWrites} device writes
           </div>
         </>

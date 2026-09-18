@@ -1,7 +1,4 @@
-// AND, OR (register<->ea forms), ANDI/ORI/EORI (general <ea> immediate
-// forms — the dedicated to-CCR/to-SR opcodes are installed separately in
-// control.js), NOT, TST.
-
+// AND, OR (register/ea forms), ANDI/ORI/EORI, NOT, TST
 import { resolveEA } from '../addressing.js';
 import { logicFlags } from '../alu.js';
 
@@ -19,9 +16,7 @@ function forEachAlterableEA(fn) {
   fn(7, 1);
 }
 
-// AND/OR register<->ea, base 0xC000 (AND) / 0x8000 (OR). opmode 0-2:
-// Dn = Dn op <ea> (any source). opmode 4-6: <ea> = <ea> op Dn (memory
-// only; modes 0/1 there are reserved for MULU/MULS/DIVU/ABCD/SBCD).
+// AND/OR register with ea, base 0xC000 (AND) / 0x8000 (OR)
 export function installAnd(table) {
   for (const dn of DATA_REGS) {
     for (const { bits, bytes: size } of SIZES) {

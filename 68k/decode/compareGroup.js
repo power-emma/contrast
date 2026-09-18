@@ -1,8 +1,4 @@
-// Opcode group 1011 (0xB000): CMP, CMPA, EOR, and CMPM. EOR and CMPM
-// share the same opmode range (4-6) — CMPM occupies exactly the
-// EA-mode-1 slot that's invalid for EOR (a destination can't be An
-// direct), using it as a fixed bit pattern for postincrement compare.
-
+// Opcode group 1011 (0xB000): CMP, CMPA, EOR, and CMPM
 import { resolveEA, signExtend } from '../addressing.js';
 import { subFlags, logicFlags } from '../alu.js';
 
@@ -41,7 +37,7 @@ export function installCmp(table) {
 }
 
 export function installEorCmpm(table) {
-  const EOR_MODES = [0, 2, 3, 4, 5, 6]; // excludes An-direct (mode 1 -> CMPM)
+  const EOR_MODES = [0, 2, 3, 4, 5, 6]; // excludes An-direct (mode 1 is CMPM)
   for (const dn of DATA_REGS) {
     for (const { bits, bytes: size } of SIZES) {
       for (const mode of EOR_MODES) {

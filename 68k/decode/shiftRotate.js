@@ -1,14 +1,11 @@
-// ASL/ASR, LSL/LSR, ROL/ROR, ROXL/ROXR — register form (variable count,
-// byte/word/long) and memory form (fixed 1-bit shift, word only).
-
+// ASL/ASR, LSL/LSR, ROL/ROR, ROXL/ROXR register and memory forms
 import { resolveEA } from '../addressing.js';
 import { nz } from '../alu.js';
 
 const DATA_REGS = [0, 1, 2, 3, 4, 5, 6, 7];
 const TYPES = ['ASx', 'LSx', 'ROXx', 'ROx'];
 
-// Bit-accurate simulation shared by both forms. `type` is one of TYPES;
-// `count` may be 0 (only reachable via the register-count register form).
+// Bit-accurate simulation shared by both forms
 function computeShift(value, size, count, type, dirLeft, xIn) {
   const bits = size * 8;
   const mask = size === 4 ? 0xffffffff : size === 2 ? 0xffff : 0xff;
@@ -93,15 +90,16 @@ export function installShiftRegister(table) {
 
 export function installShiftMemory(table) {
   const MODES = [2, 3, 4, 5, 6];
+  // Memory form: type in bits 10..9, direction in bit 8, base 0xe0c0
   for (let dr = 0; dr <= 1; dr++) {
     for (let tt = 0; tt <= 3; tt++) {
       for (const mode of MODES) {
         for (const reg of DATA_REGS) {
-          table[0xe1c0 | (tt << 10) | (dr << 9) | (mode << 3) | reg] = (cpu) => runShiftMemory(cpu, mode, reg, tt, dr);
+          table[0xe0c0 | (tt << 9) | (dr << 8) | (mode << 3) | reg] = (cpu) => runShiftMemory(cpu, mode, reg, tt, dr);
         }
       }
       for (const reg of [0, 1]) {
-        table[0xe1c0 | (tt << 10) | (dr << 9) | (7 << 3) | reg] = (cpu) => runShiftMemory(cpu, 7, reg, tt, dr);
+        table[0xe0c0 | (tt << 9) | (dr << 8) | (7 << 3) | reg] = (cpu) => runShiftMemory(cpu, 7, reg, tt, dr);
       }
     }
   }
