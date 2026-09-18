@@ -32,9 +32,15 @@ const VIA_REG0_ADDR = 0xefe1fe;
 const VIA_REG_ORB = 0;
 const VIA_REG_ORA = 1;
 const VIA_REG_SR = 10;
+const VIA_REG_ACR = 11;
 const VIA_REG_IFR = 13;
 const VIA_REG_IER = 14;
 const VIA_REG_ORA_NH = 15;
+// ACR bits 4..2 select the shift register's mode; the ROM's keyboard driver
+// leaves this in "shift in under CB1" between commands, which is also the
+// idle state the keyboard uses to deliver an unsolicited key transition
+const VIA_ACR_SR_MASK = 0x1c;
+const VIA_ACR_SR_IN_CB1 = 0x0c;
 const VIA_OVERLAY_BIT = 0x10;
 // Port B bits 3..5: mouse switch and X/Y quadrature direction lines
 const VIA_PB_SW = 0x08;
@@ -132,6 +138,7 @@ export class Bus {
     this.t2Counter = 0; // synthetic VIA Timer 2 timebase (see pendingInterruptLevel)
     this.viaORB = 0xff; // idle-high default, same convention as viaORA
     this.viaSR = 0;
+    this.viaACR = 0;
 
     // Real-time clock serial state machine (Apple RTC on Port B bits 0..2)
     this.rtcEnabled = false;      // chip selected (rTCEnable is active-low)
@@ -303,9 +310,22 @@ export class Bus {
     this.mouseButtonDown = down;
   }
 
-  // Queue raw M0110 bytes for the ROM's Inquiry/Instant commands to drain
+  // Queue raw M0110 bytes for the ROM's Inquiry/Instant commands to drain,
+  // or straight to the shift register if the ROM is already idle-listening
   keyEvent(rawBytes) {
     for (const b of rawBytes) this.keyQueue.push(b);
+    this._maybeDeliverKey();
+  }
+
+  // Mirrors the keyboard autonomously clocking in a byte: only possible
+  // while the VIA's shift register is parked in "shift in under CB1" (the
+  // ROM's idle state) and no unread reply is already sitting in SR.
+  _maybeDeliverKey() {
+    if ((this.viaACR & VIA_ACR_SR_MASK) !== VIA_ACR_SR_IN_CB1) return;
+    if (this.viaIFR & VIA_SR_BIT) return;
+    if (this.keyQueue.length === 0) return;
+    this.viaSR = this.keyQueue.shift();
+    this.viaIFR |= VIA_SR_BIT;
   }
 
   // Answer each keyboard command byte immediately with the response in vSR
@@ -464,6 +484,10 @@ export class Bus {
         this.viaIFR &= ~VIA_SR_BIT; // reading vSR clears the shift-complete flag
         return size === 1 ? b : size === 2 ? ((b << 8) | b) : (((b << 24) | (b << 16) | (b << 8) | b) >>> 0);
       }
+      if (reg === VIA_REG_ACR) {
+        const b = this.viaACR;
+        return size === 1 ? b : size === 2 ? ((b << 8) | b) : (((b << 24) | (b << 16) | (b << 8) | b) >>> 0);
+      }
       if (reg === VIA_REG_IFR) {
         // Bit 7 mirrors "any enabled flag active", matching real 6522 reads.
         const byte = (this.viaIFR & 0x7f) | (this.pendingInterruptLevel() ? 0x80 : 0);
@@ -602,6 +626,14 @@ export class Bus {
       } else if (reg === VIA_REG_SR) {
         this.viaSR = this._keyboardCommand(value & 0xff);
         this.viaIFR |= VIA_SR_BIT;
+      } else if (reg === VIA_REG_ACR) {
+        this.viaACR = value & 0xff;
+        // The ROM leaves the shift register parked in "shift in" mode
+        // between commands, exactly like the keyboard's own idle state.
+        // Real hardware lets the keyboard clock a key transition in
+        // unprompted whenever the bus is free like this; mirror that here
+        // instead of only ever answering a byte the CPU explicitly asked for.
+        this._maybeDeliverKey();
       } else if (reg === VIA_REG_IFR) {
         // Real 6522: writing a 1 to an IFR bit clears that flag.
         this.viaIFR &= ~(value & 0x7f);

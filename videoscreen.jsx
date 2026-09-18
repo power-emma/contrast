@@ -30,8 +30,6 @@ function decode1bpp(bytes) {
 // Paints the shared core's framebuffer to the canvas every frame
 const VideoScreen = () => {
   const canvasRef = useRef(null);
-  // Whether this screen currently holds the keyboard
-  const focusedRef = useRef(false);
 
   useEffect(() => {
     const ctx = canvasRef.current.getContext('2d');
@@ -45,10 +43,9 @@ const VideoScreen = () => {
     return subscribeVideoFrame(draw);
   }, []);
 
-  // Forward host keys to the Bus as M0110 bytes, gated on our focus flag
+  // Forward every host key to the Bus as M0110 bytes, regardless of focus
   useEffect(() => {
     const forward = (code, down) => {
-      if (!focusedRef.current) return false;
       const bus = getRuntime().bus;
       if (!bus) return false;
       const bytes = keyEventBytes(code, down);
@@ -107,8 +104,6 @@ const VideoScreen = () => {
         width={SCREEN_W}
         height={SCREEN_H}
         tabIndex={0}
-        onFocus={() => { focusedRef.current = true; }}
-        onBlur={() => { focusedRef.current = false; }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
