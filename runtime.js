@@ -4,7 +4,7 @@ import diskUrl from './boot.dsk?url';
 import disk2Url from './paint.dsk?url';
 
 // Unwrap a DiskCopy 4.2 image to its raw sector data, else pass through
-function rawSectorsFromDsk(bytes) {
+export function rawSectorsFromDsk(bytes) {
   if (bytes.length >= 84) {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const dataSize = dv.getUint32(0x40, false);
@@ -33,9 +33,12 @@ let runtime = null;
 export function getRuntime() {
   if (runtime) return runtime;
 
-  runtime = { cpu: null, bus: null, error: null, listeners: new Set(), videoListeners: new Set() };
-  const notify = () => runtime.listeners.forEach((fn) => fn());
-  const notifyVideo = () => runtime.videoListeners.forEach((fn) => fn());
+  runtime = { cpu: null, bus: null, error: null, stopped: false, listeners: new Set(), videoListeners: new Set() };
+  // Capture the instance so the async loops keep working on *this* runtime even
+  // after stopRuntime() nulls the module-level reference on shutdown.
+  const rt = runtime;
+  const notify = () => { if (rt.stopped) return; rt.listeners.forEach((fn) => fn()); };
+  const notifyVideo = () => { if (rt.stopped) return; rt.videoListeners.forEach((fn) => fn()); };
 
   Promise.all([
     fetch(romUrl).then((res) => res.arrayBuffer()),
@@ -43,16 +46,21 @@ export function getRuntime() {
     fetch(disk2Url).then((res) => res.arrayBuffer()),
   ])
     .then(([romBuf, diskBuf, disk2Buf]) => {
+      // Bail out if the app was closed while the ROM/disks were still loading
+      if (rt.stopped) return;
       const bus = new Bus(
         new Uint8Array(romBuf),
         new Uint8Array(diskBuf),
         rawSectorsFromDsk(new Uint8Array(disk2Buf)),
       );
+      // Label the drives with the images they booted from
+      if (bus.drives[0]) bus.drives[0].imageName = 'boot.dsk';
+      if (bus.drives[1]) bus.drives[1].imageName = 'paint.dsk';
       const cpu = new CPU(bus);
       cpu.reset();
-      runtime.bus = bus;
-      runtime.cpu = cpu;
-      runtime.mhz = 0;
+      rt.bus = bus;
+      rt.cpu = cpu;
+      rt.mhz = 0;
       notify();
 
       // Effective throughput as instructions/second, not cycle accurate
@@ -60,7 +68,7 @@ export function getRuntime() {
       let mhzSampleInstrs = cpu.instructionCount;
 
       const runLoop = () => {
-        if (cpu.halted) return;
+        if (rt.stopped || cpu.halted) return;
         cpu.run(INSTRUCTIONS_PER_CHUNK);
         setTimeout(runLoop, 0);
       };
@@ -68,6 +76,7 @@ export function getRuntime() {
 
       // Real rAF video loop, advancing one simulated scanline per frame
       const videoLoop = () => {
+        if (rt.stopped) return;
         bus.advanceFrame();
         notifyVideo();
         if (!cpu.halted) requestAnimationFrame(videoLoop);
@@ -76,13 +85,14 @@ export function getRuntime() {
 
       let lastRender = 0;
       const renderLoop = (now) => {
+        if (rt.stopped) return;
         if (now - lastRender >= PANEL_RENDER_INTERVAL_MS) {
           lastRender = now;
 
           const elapsed = now - mhzSampleTime;
           if (elapsed >= MHZ_SAMPLE_MS) {
             const instrs = cpu.instructionCount - mhzSampleInstrs;
-            runtime.mhz = (instrs / elapsed) / 1000;
+            rt.mhz = (instrs / elapsed) / 1000;
             mhzSampleTime = now;
             mhzSampleInstrs = cpu.instructionCount;
           }
@@ -95,11 +105,24 @@ export function getRuntime() {
       requestAnimationFrame(renderLoop);
     })
     .catch((err) => {
-      runtime.error = err;
+      if (rt.stopped) return;
+      rt.error = err;
       notify();
     });
 
   return runtime;
+}
+
+// Tear down the shared CPU/Bus: stops every loop, drops subscribers, and clears
+// the singleton so the next getRuntime() boots a fresh core. Called when the
+// Contrast app is closed.
+export function stopRuntime() {
+  if (!runtime) return;
+  runtime.stopped = true;
+  if (runtime.cpu) runtime.cpu.halted = true;
+  runtime.listeners.clear();
+  runtime.videoListeners.clear();
+  runtime = null;
 }
 
 // Subscribe to throttled panel updates. Returns an unsubscribe function

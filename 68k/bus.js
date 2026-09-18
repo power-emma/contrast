@@ -193,6 +193,30 @@ export class Bus {
     return this.drives[this.iwmDriveSel] || null;
   }
 
+  // Swap fresh media into a drive: rebuilds the Sony geometry from the image and
+  // clears the drive's activity heat-map. `imageBytes` are raw 512-byte sectors;
+  // `name` is the source filename, shown in the disk activity panel.
+  insertDisk(driveIdx, imageBytes, name) {
+    const idx = driveIdx >= 1 ? 1 : 0;
+    this.drives[idx] = new SonyDrive(imageBytes);
+    this.drives[idx].imageName = name || null;
+    this.diskActivity[idx] = {
+      read: new Int32Array(TRACK_COUNT).fill(-1),
+      write: new Int32Array(TRACK_COUNT).fill(-1),
+    };
+  }
+
+  // Remove the media from a drive (leaves the empty drive present on the bus).
+  ejectDisk(driveIdx) {
+    const idx = driveIdx >= 1 ? 1 : 0;
+    this.drives[idx] = new SonyDrive(new Uint8Array(0));
+    this.drives[idx].imageName = null;
+    this.diskActivity[idx] = {
+      read: new Int32Array(TRACK_COUNT).fill(-1),
+      write: new Int32Array(TRACK_COUNT).fill(-1),
+    };
+  }
+
   // High-level disk read shortcut: intercept the .Sony _Read trap and copy from the image
   serviceTrap(cpu, opcode) {
     const trap = opcode & 0xf0ff;

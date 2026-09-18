@@ -1,5 +1,5 @@
-import { React, useEffect, useState } from 'react';
-import { getRuntime, subscribeRuntime } from './runtime';
+import { React, useEffect, useRef, useState } from 'react';
+import { getRuntime, subscribeRuntime, rawSectorsFromDsk } from './runtime';
 import { TRACK_COUNT } from './68k';
 
 // How many frames a track stays hot after an access before fading back
@@ -27,15 +27,55 @@ function trackColor(readFrame, writeFrame, frame) {
   return wAge <= rAge ? heat(WRITE_RGB, wAge) : heat(READ_RGB, rAge);
 }
 
-const DriveGrid = ({ drive, activity, frame, index }) => {
+// Terminal-styled button matching the panel's green-on-black theme
+const btnStyle = {
+  font: 'inherit',
+  color: '#33ff66',
+  background: 'transparent',
+  border: '1px solid #33ff66',
+  padding: '1px 8px',
+  cursor: 'pointer',
+};
+
+const DriveGrid = ({ bus, drive, activity, frame, index, onChange }) => {
   const label = index === 0 ? 'DRIVE 1 (internal)' : 'DRIVE 2 (external)';
   const present = !!(drive && drive.hasDisk);
   const head = drive ? drive.headTrack : 0;
   const state = present ? (drive.motor ? 'spinning' : 'idle') : 'no disk';
+  const fileRef = useRef(null);
+
+  // Load a disk image from the host into this drive
+  const handleLoad = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file || !bus) return;
+    const buf = await file.arrayBuffer();
+    // Unwrap DiskCopy 4.2 containers down to raw sectors, else use bytes as-is
+    const bytes = rawSectorsFromDsk(new Uint8Array(buf));
+    bus.insertDisk(index, bytes, file.name);
+    if (onChange) onChange();
+  };
+
+  // Save this drive's current image (including any writes) to a host file
+  const handleSave = () => {
+    if (!drive || !drive.image || drive.image.length === 0) return;
+    // Copy into a fresh buffer so the Blob owns bytes independent of the live image
+    const blob = new Blob([drive.image.slice()], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = drive.imageName || `drive${index + 1}.dsk`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const name = present ? (drive.imageName || 'untitled') : null;
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <div>{label} [{state}]</div>
+      <div>
+        {label}{name ? ` — ${name}` : ''} [{state}]
+      </div>
       <div style={{ opacity: 0.7, marginBottom: 4 }}>
         head @ track {String(head).padStart(2, '0')}/{TRACK_COUNT - 1}
       </div>
@@ -57,13 +97,34 @@ const DriveGrid = ({ drive, activity, frame, index }) => {
           );
         })}
       </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <button type="button" style={btnStyle} onClick={() => fileRef.current && fileRef.current.click()}>
+          Load…
+        </button>
+        <button
+          type="button"
+          style={{ ...btnStyle, opacity: present ? 1 : 0.4, cursor: present ? 'pointer' : 'default' }}
+          onClick={handleSave}
+          disabled={!present}
+        >
+          Save
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".dsk,.img,.image,application/octet-stream"
+          onChange={handleLoad}
+          style={{ display: 'none' }}
+        />
+      </div>
     </div>
   );
 };
 
 const DiskActivity = () => {
   const [, setTick] = useState(0);
-  useEffect(() => subscribeRuntime(() => setTick((n) => n + 1)), []);
+  const rerender = () => setTick((n) => n + 1);
+  useEffect(() => subscribeRuntime(rerender), []);
 
   const bus = getRuntime().bus;
 
@@ -86,8 +147,8 @@ const DiskActivity = () => {
         <div>status: no disks attached</div>
       ) : (
         <>
-          <DriveGrid drive={bus.drives[0]} activity={bus.diskActivity[0]} frame={bus.frame} index={0} />
-          <DriveGrid drive={bus.drives[1]} activity={bus.diskActivity[1]} frame={bus.frame} index={1} />
+          <DriveGrid bus={bus} drive={bus.drives[0]} activity={bus.diskActivity[0]} frame={bus.frame} index={0} onChange={rerender} />
+          <DriveGrid bus={bus} drive={bus.drives[1]} activity={bus.diskActivity[1]} frame={bus.frame} index={1} onChange={rerender} />
           <div>--------------------------------</div>
           <div style={{ fontSize: 11 }}>
             <span style={{ color: `rgb(${READ_RGB.join(',')})` }}>█</span> read{'   '}
